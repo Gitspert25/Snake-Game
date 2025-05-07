@@ -20,6 +20,7 @@
       align-items: center;
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       margin-top: 2rem;
+      user-select: none;
     }
     #game-board {
       position: relative;
@@ -32,7 +33,6 @@
       grid-template-columns: repeat(20, 1fr);
       grid-template-rows: repeat(20, 1fr);
       gap: 2px;
-      user-select: none;
     }
     .cell {
       width: 100%;
@@ -43,10 +43,11 @@
     }
     .snake-segment {
       color: #0dcaf0;
+      font-size: 1.1rem;
     }
     .food {
       color: #fd7e14; /* bootstrap orange */
-      font-size: 1.25rem;
+      font-size: 1.3rem;
     }
     #scoreboard {
       margin-top: 1rem;
@@ -64,6 +65,8 @@
       text-align: center;
       display: none;
       z-index: 10;
+      width: 300px;
+      user-select: none;
     }
     #game-over button {
       margin-top: 1rem;
@@ -72,14 +75,14 @@
 </head>
 <body>
 
-  <h1 class="mb-4">Snake Game 🐍 - Gitspert25 Edition</h1>
+  <h1 class="mb-4 text-info">Snake Game 🐍 - Gitspert25 Edition</h1>
 
   <div id="game-board"></div>
 
   <div id="scoreboard">Score: 0</div>
 
   <div id="game-over">
-    <h2>Game Over 😞</h2>
+    <h2 class="text-warning">Game Over 😞</h2>
     <p>Your score was: <span id="final-score"></span></p>
     <button id="restart-btn" class="btn btn-info">Restart</button>
   </div>
@@ -100,10 +103,11 @@
     let gameInterval;
     let isGameOver = false;
 
-    // Create board cells
+    // Pre-create cells & store for easy access
     const cells = [];
     function createBoard() {
       board.innerHTML = '';
+      cells.length = 0; // clear array
       for(let i=0; i < rows * cols; i++) {
         const cell = document.createElement('div');
         cell.classList.add('cell');
@@ -112,12 +116,12 @@
       }
     }
 
-    // Convert coordinate to index in cells array
+    // Convert coordinate to cell index
     function xyToIndex(x, y) {
       return y * cols + x;
     }
 
-    // Place food randomly
+    // Place food in free cell
     function placeFood() {
       while(true) {
         const x = Math.floor(Math.random() * cols);
@@ -129,40 +133,92 @@
       }
     }
 
-    // Draw snake and food
+    // Draw snake & food
     function draw() {
-      cells.forEach(cell => cell.innerHTML = '');
+      cells.forEach(cell => (cell.innerHTML = ''));
+
       snake.forEach(segment => {
         const cellIndex = xyToIndex(segment.x, segment.y);
         cells[cellIndex].innerHTML = '<i class="bi bi-square-fill snake-segment"></i>';
       });
+
       const foodIndex = xyToIndex(food.x, food.y);
       cells[foodIndex].innerHTML = '<i class="bi bi-egg-fried food"></i>';
     }
 
-    // Update snake position and game state
+    // Play food eating sound
+    function playEatSound() {
+      try {
+        const context = new AudioContext();
+        const oscillator = context.createOscillator();
+        const gainNode = context.createGain();
+
+        oscillator.type = 'triangle';
+        oscillator.frequency.setValueAtTime(880, context.currentTime);
+        gainNode.gain.setValueAtTime(0.1, context.currentTime);
+
+        oscillator.connect(gainNode);
+        gainNode.connect(context.destination);
+
+        oscillator.start();
+
+        oscillator.frequency.exponentialRampToValueAtTime(440, context.currentTime + 0.2);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.2);
+
+        oscillator.stop(context.currentTime + 0.2);
+      } catch(e){ /* fail silently */ }
+    }
+
+    // Play game over sound
+    function playGameOverSound() {
+      try {
+        const context = new AudioContext();
+        const oscillator = context.createOscillator();
+        const gainNode = context.createGain();
+
+        oscillator.type = 'square';
+        oscillator.frequency.setValueAtTime(300, context.currentTime);
+        gainNode.gain.setValueAtTime(0.2, context.currentTime);
+
+        oscillator.connect(gainNode);
+        gainNode.connect(context.destination);
+
+        oscillator.start();
+
+        oscillator.frequency.exponentialRampToValueAtTime(50, context.currentTime + 0.5);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.5);
+
+        oscillator.stop(context.currentTime + 0.5);
+      } catch(e){ /* fail silently */ }
+    }
+
+    // Update snake position & game state
     function update() {
       if(direction.x === 0 && direction.y === 0) return;
 
-      const head = { x: snake[0].x + direction.x, y: snake[0].y + direction.y };
+      let head = {
+        x: snake[0].x + direction.x,
+        y: snake[0].y + direction.y
+      };
 
-      // Wrap around edges (optional feature; comment if no wrap)
+      // Wrap around edges
       if(head.x < 0) head.x = cols - 1;
       if(head.x >= cols) head.x = 0;
       if(head.y < 0) head.y = rows - 1;
       if(head.y >= rows) head.y = 0;
 
-      // Check collision with self
+      // Check self collision
       if(snake.some(segment => segment.x === head.x && segment.y === head.y)) {
         return gameOver();
       }
 
       snake.unshift(head);
 
-      // Check if food eaten
+      // Food eaten?
       if(head.x === food.x && head.y === food.y) {
         score++;
         scoreboard.textContent = `Score: ${score}`;
+        playEatSound();
         placeFood();
       } else {
         snake.pop();
@@ -171,21 +227,21 @@
       draw();
     }
 
-    // Game over function
+    // Game Over
     function gameOver() {
       isGameOver = true;
       clearInterval(gameInterval);
       finalScore.textContent = score;
       gameOverScreen.style.display = 'block';
+      playGameOverSound();
     }
 
-    // Control input handler
-    window.addEventListener('keydown', e => {
+    // Key controls
+    window.addEventListener('keydown', event => {
       if(isGameOver) return;
 
-      const key = e.key;
+      const key = event.key;
 
-      // Prevent reverse direction
       switch(key) {
         case 'ArrowUp':
           if(direction.y === 1) break;
@@ -206,8 +262,8 @@
       }
     });
 
-    // Restart game
-    restartBtn.addEventListener('click', () => {
+    // Restart button
+    restartBtn.onclick = () => {
       isGameOver = false;
       snake = [{ x: 10, y: 10 }];
       direction = { x: 0, y: 0 };
@@ -216,15 +272,15 @@
       gameOverScreen.style.display = 'none';
       placeFood();
       draw();
+      clearInterval(gameInterval);
       gameInterval = setInterval(update, 150);
-    });
+    };
 
-    // Start the game
+    // Initialize
     createBoard();
     placeFood();
     draw();
     gameInterval = setInterval(update, 150);
-
   </script>
 </body>
 </html>
